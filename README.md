@@ -1,1 +1,3 @@
-# Vanilla Javascript Arkanoid
+# Arkanoid
+
+Vanilla JavaScript Arkanoid
