@@ -3,7 +3,7 @@
  */
 const FPS = 60;
 const colors = ["red", "green", "blue", "orange", "yellow", "purple", "pink"];
-const Direction = Object.freeze({"UP":-1, "DOWN":1, "RIGHT":1, "LEFT":-1})
+const Direction = Object.freeze({"UP":-1, "DOWN":1, "RIGHT":1, "LEFT":-1});
 
 const clamp = function(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
@@ -16,9 +16,22 @@ const checkCollision_CircleRectangle = function(circle, rectangle) {
     return distance < circle.getRadius();
 }
 
-var DEBUG = true;
+/**
+ * Debug
+ */
+var DEBUG = false;
 var rays = [];
 
+
+/**
+ * Component abstract class.
+ */
+class Component {
+
+    update() {}
+    render() {}
+
+}
 
 
 /******************************************************************************************/
@@ -66,19 +79,6 @@ var rays = [];
 /************************************  AUXILAR SCREENS ************************************/
 
 /**
- * Screen class. The game screen.
- */
- class Screen {
-
-    constructor() {
-        this.canvas = document.getElementById("canvas");
-        this.width = this.canvas.width;
-        this.height = this.canvas.height;
-    }
- 
-}
-
-/**
  * AuxilarScreen class. The auxilar screen of the game.
  */
 class AuxilarScreen {
@@ -119,14 +119,22 @@ class PauseScreen extends AuxilarScreen {
  */
  class GameOverScreen extends AuxilarScreen {
     constructor() {
-        super("GAME OVER", '(Press "F5" to restart)');
+        super("GAME OVER", '(Press "F5" to try again)');
+    }
+}
+
+/**
+ * WinScreen class. The "you won" screen of the game.
+ */
+class WinScreen extends AuxilarScreen {
+    constructor() {
+        super("YOU WON!", '(Press "F5" to play again)');
     }
 }
 
 
 /******************************************************************************************/
 /**************************************** GAME STATES *************************************/
-
 
 /**
  * State abstract class.
@@ -169,17 +177,26 @@ class RunningState extends State {
         var game = this.game;
         var keyboard = game.keyboard;
 
-        game.paddle.update(keyboard, deltaTime);
-        game.ball.update(keyboard, deltaTime);
+        game.checkWinState();
+
+        game.components.forEach(function(component) {
+            component.update(keyboard, deltaTime);
+        })
     }
 
     onPausePressed() { this.game.pauseGame(); }
 
 }
+
 /**
  * GameOverState class. The "game over" state of the game.
  */
 class GameOverState extends State {}
+
+/**
+ * WinState class. The "you won" state of the game.
+ */
+ class WinState extends State {}
 
 
 /******************************************************************************************/
@@ -216,12 +233,32 @@ class GameOverState extends State {}
 }
 
 /**
+ * MainScreen class. The game screen.
+ */
+ class MainScreen extends Component {
+
+    constructor() {
+        super();
+        this.canvas = document.getElementById("canvas");
+        this.width = this.canvas.width;
+        this.height = this.canvas.height;
+    }
+
+    render(ctx) {
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, this.width, this.height);
+    }
+ 
+}
+
+/**
  * Ball class. The game ball.
  */
-class Ball {
+class Ball extends Component {
 
     constructor(game, screen, paddle, board) {
 
+        super();
         this.game = game;
         this.screen = screen;
         this.paddle = paddle;
@@ -245,7 +282,19 @@ class Ball {
 
         // Others
         this.lineWidth = 2;
+    }
 
+    render(ctx) {
+        ctx.fillStyle = "black";
+        ctx.shadowColor = "rgba(0, 0, 0, 0)";
+        ctx.shadowBlur = 0;
+        ctx.lineJoin = 'miter';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = this.lineWidth;
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+        ctx.stroke();
     }
 
     getLeftMost() {
@@ -350,16 +399,16 @@ class Ball {
             var blockLeftMost = blockDestroyed.rect.getLeftMost();
             var blockRightMost = blockDestroyed.rect.getRightMost();
 
-            if (this.getTopMost() < blockDownMost && this.getOldTopMost() > blockDownMost) {
+            if (this.getTopMost() < blockDownMost && this.getOldTopMost() >= blockDownMost) {
                 this.y = blockDownMost + this.getRadius();
                 this.yDirection = Direction.DOWN;
-            } else if (this.getDownMost() > blockTopMost && this.getOldDownMost() < blockTopMost) {
+            } else if (this.getDownMost() > blockTopMost && this.getOldDownMost() <= blockTopMost) {
                 this.yDirection = Direction.UP;
                 this.y = blockTopMost - this.getRadius();
-            } else if (this.getLeftMost() < blockRightMost && this.getOldLeftMost() > blockRightMost) {
+            } else if (this.getLeftMost() < blockRightMost && this.getOldLeftMost() >= blockRightMost) {
                 this.xDirection = Direction.RIGHT;
                 this.x = blockRightMost + this.getRadius();
-            } else if (this.getRightMost() > blockLeftMost && this.getOldRightMost() < blockLeftMost) {
+            } else if (this.getRightMost() > blockLeftMost && this.getOldRightMost() <= blockLeftMost) {
                 this.xDirection = Direction.LEFT;
                 this.x = blockLeftMost - this.getRadius();
             }
@@ -397,15 +446,13 @@ class Ball {
 
         var collision = checkCollision_CircleRectangle(this, this.paddle.rect);
 
-        //console.log("Ball.oldY = " + this.oldY + ", Ball.y = " + this.y + ", Paddle.y = " + this.paddle.rect.y + ", Collision: ", collision);
-
         if (collision) {
 
             var diff = this.x - this.paddle.rect.getCenter()[0];
             this.xDirection = diff < 0 ? Direction.LEFT : Direction.RIGHT;
 
             // Collision was with the top part
-            if (this.getDownMost() > this.paddle.rect.y && this.getOldDownMost() < this.paddle.oldRect.y) {
+            if (this.getDownMost() > this.paddle.rect.y && this.getOldDownMost() <= this.paddle.oldRect.y) {
 
                 var newY = this.paddle.rect.y - this.getRadius();
                 //var xIncrement = Math.abs(this.y - newY) / Math.tan(this.angle);
@@ -433,9 +480,10 @@ class Ball {
 /**
  * Class Paddle. The game paddle.
  */
-class Paddle {
+class Paddle extends Component {
 
     constructor(screen) {
+        super();
         this.screen = screen;
 
         var width = 70;
@@ -456,6 +504,16 @@ class Paddle {
         );
 
         this.speed = 0.5;
+    }
+
+    render(ctx) {
+        ctx.fillStyle = "black";
+        ctx.shadowColor = '#d53';
+        ctx.shadowBlur = 3;
+        ctx.lineJoin = 'bevel';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#30f';
+        ctx.fillRect(this.rect.x, this.rect.y, this.rect.width, this.rect.height);
     }
 
     update(keyboard, deltaTime) {
@@ -503,14 +561,25 @@ class Paddle {
 /**
  * Class Board.
  */
-class Board {
+class Board extends Component {
 
     constructor(screen) {
+        super();
         this.blocks = Stage1.getBlocks(screen);
     }
 
     getActiveBlocks() {
         return this.blocks.filter(function(block) { return !block.isDestroyed; });
+    }
+
+    render(ctx) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "black";
+        this.getActiveBlocks().forEach(function(block) {
+            ctx.fillStyle = block.color;
+            ctx.fillRect(block.rect.x, block.rect.y, block.rect.width, block.rect.height);
+            ctx.strokeRect(block.rect.x, block.rect.y, block.rect.width, block.rect.height);
+        });
     }
 
 }
@@ -545,25 +614,31 @@ class Stage1 {
 }
 
 /**
- * Game class. The manager class.
+ * Game class. The manager class of the game.
  */
  class Game {
 
     constructor() {
 
-        // Screens
+        // Inputs
+        this.keyboard = new Keyboard(this);
+
+        // Auxilar Screens
         this.pauseScreen = new PauseScreen();
         this.gameOverScreen = new GameOverScreen();
+        this.winScreen = new WinScreen();
 
         // Components
-        this.keyboard = new Keyboard(this);
-        this.screen = new Screen();
+        this.screen = new MainScreen();
         this.board = new Board(this.screen);
         this.paddle = new Paddle(this.screen);
         this.ball = new Ball(this, this.screen, this.paddle, this.board);
+        this.components = [this.screen, this.board, this.paddle, this.ball];
 
-        // Attributes
+        // State
         this.state = new RunningState(this);
+
+        // Other
         this.ctx = this.screen.canvas.getContext("2d");
         this.lastUpdate = Date.now();
         this.loopID = null;
@@ -594,44 +669,10 @@ class Stage1 {
 
     render() {
 
-        var self = this;
-
-        var screen = this.screen;
-        var paddle = this.paddle;
-        var ball = this.ball;
-
-        // Render the screen
-        this.ctx.fillStyle = "white";
-        this.ctx.fillRect(0, 0, screen.width, screen.height);
-
-        // Render the paddle
-        this.ctx.fillStyle = "black";
-        this.ctx.shadowColor = '#d53';
-        this.ctx.shadowBlur = 3;
-        this.ctx.lineJoin = 'bevel';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeStyle = '#30f';
-        this.ctx.fillRect(paddle.rect.x, paddle.rect.y, paddle.rect.width, paddle.rect.height);
-
-        // Render the blocks
-        this.ctx.strokeStyle = "black";
-        this.board.getActiveBlocks().forEach(function(block) {
-            self.ctx.fillStyle = block.color;
-            self.ctx.fillRect(block.rect.x, block.rect.y, block.rect.width, block.rect.height);
-            self.ctx.strokeRect(block.rect.x, block.rect.y, block.rect.width, block.rect.height);
+        var ctx = this.ctx;
+        this.components.forEach(function(component) { 
+            component.render(ctx); 
         });
-
-        // Render the ball
-        this.ctx.fillStyle = "black";
-        this.ctx.shadowColor = "rgba(0, 0, 0, 0)";
-        this.ctx.shadowBlur = 0;
-        this.ctx.lineJoin = 'miter';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = ball.lineWidth;
-
-        this.ctx.beginPath();
-        this.ctx.arc(ball.x, ball.y, ball.radius, 0, 2 * Math.PI);
-        this.ctx.stroke();
 
         // Debug rendering
         if (DEBUG && rays.length > 0) {
@@ -651,14 +692,14 @@ class Stage1 {
         this.state.onPausePressed();
     }
 
-    resumeGame() {
-        this.state = new RunningState(this);
-        this.pauseScreen.hide();
-    }
-
     pauseGame() {
         this.state = new PausedState(this);
         this.pauseScreen.show();
+    }
+
+    resumeGame() {
+        this.state = new RunningState(this);
+        this.pauseScreen.hide();
     }
 
     gameOver() {
@@ -667,6 +708,18 @@ class Stage1 {
         clearInterval(this.loopID);
         var self = this;
         setTimeout(function() { self.gameOverScreen.show(); }, 100);
+    }
+
+    checkWinState() {
+        if (this.board.getActiveBlocks().length == 0) this.win();
+    }
+
+    win() {
+        this.state = new WinState();
+        this.render();
+        clearInterval(this.loopID);
+        var self = this;
+        setTimeout(function() { self.winScreen.show(); }, 100);
     }
 
 }
